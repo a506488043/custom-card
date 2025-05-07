@@ -1,35 +1,13 @@
-=== Custom Card ===
-
-Contributors: a506488043
-
-Donate link: https://www.saiita.top
-
-Tags: Custom Card
-
-Requires at least: 6.7.1
-
-Requires PHP: 8.1.30
-
-Stable tag: 1.0
-
-Tested up to: 6.7.1
-
-
-License: GPLv2 or later License URI: http://www.gnu.org/licenses/gpl-2.0.html
-
-
-== Description ==
-
 Custom Card Plugin 是一个用于在 WordPress 网站中快速添加美观的卡片布局的插件。支持灵活的内容展示,包括图片、标题、描述文字和链接,适用于博客文章中插入网站的场景。
 
-== 功能 ==
+# 功能 
 
 - 响应式布局,适配桌面端和移动端。
 - 支持自定义图片、标题、描述文字和链接。
 - 提供简单易用的短代码,快速插入卡片。
 - 灵活的自定义样式,适合不同设计需求。
 
-== 安装 ==
+# 安装 
 
 1. 下载插件的 ZIP 文件。
 2. 登录 WordPress 后台,导航到 **插件 > 安装插件**。
@@ -37,11 +15,10 @@ Custom Card Plugin 是一个用于在 WordPress 网站中快速添加美观的�
 4. 安装完成后,点击 **启用插件**。
 5. 插件启用后,可以通过短代码或小工具在页面中添加自定义卡片。
 
-== 使用方法 ==
+# 使用方法 
+## 使用方法
 
-### # 使用方法
-
-### 使用短代码
+##  使用短代码
 
 使用
 
@@ -53,19 +30,19 @@ Custom Card Plugin 是一个用于在 WordPress 网站中快速添加美观的�
 
 2. 替换短代码中的参数值,生成您需要的卡片内容。
 
-### 短代码参数
+## 短代码参数
 
 - `title`:卡片的标题(必填)。
 - `description`:卡片的描述内容(可选)。
 - `image_url`:卡片的图片链接地址(必填)。
 - `link_url`:卡片的跳转链接(可选)。
 
-### 自定义样式
+## 自定义样式
 
 1. 插件默认样式文件位于 `/assets/css/style.css`。
 2. 您可以通过 WordPress 外观设置自定义 CSS,覆盖默认样式。
 
-== 常见问题 ==
+# 常见问题 
 
 ### 1. 插件安装后没有效果?
 
