@@ -1,7 +1,8 @@
 Custom Card Plugin 是一个用于在 WordPress 网站中快速添加美观的卡片布局的插件。支持灵活的内容展示,包括图片、标题、描述文字和链接,适用于博客文章中插入网站的场景。
 
 效果
-![image](https://github.com/user-attachments/assets/20e412cf-ec01-4f75-a0de-561d78780f29)
+![image](https://github.com/user-attachments/assets/a33fdf3c-3998-42e3-a50a-a97a4c0167d0)
+
 
 
 # 功能 
