@@ -64,7 +64,7 @@
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
-    max-height: 3em; 
+    max-height: 2em; 
 }
 
 /* 纯URL显示样式 */

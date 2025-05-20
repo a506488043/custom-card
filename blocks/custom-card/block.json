@@ -1,0 +1,17 @@
+{
+  "apiVersion": 2,
+  "name": "custom-card/card-block",
+  "title": "卡片展示",
+  "category": "widgets",
+  "icon": "format-image",
+  "description": "插入一个自定义卡片组件",
+  "editorScript": "file:./index.js",
+  "render": "file:../../template/card.php",
+  "attributes": {
+    "url": {
+      "type": "string",
+      "default": ""
+    }
+  },
+  "usesContext": ["postId"]
+}
