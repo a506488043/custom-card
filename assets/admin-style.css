@@ -1,0 +1,175 @@
+/**
+ * 网站卡片插件管理界面样式
+ */
+
+/* 布局容器 */
+.chfm-flex-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.chfm-flex-item {
+    flex: 1;
+    min-width: 300px;
+}
+
+/* 全宽卡片容器 */
+.chfm-full-width-card {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+/* 响应式表格容器 */
+.chfm-responsive-container {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.chfm-responsive-table {
+    width: 100%;
+    table-layout: fixed;
+}
+
+/* 缓存时间状态 */
+.cache-time {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.cache-time.valid {
+    background-color: #e7f7e3;
+    color: #2a8d27;
+}
+
+.cache-time.expired {
+    background-color: #ffeaea;
+    color: #d63638;
+}
+
+/* 卡片列表表格样式 */
+.wp-list-table img.card-thumbnail {
+    border-radius: 3px;
+    border: 1px solid #ddd;
+    max-width: 50px;
+    max-height: 50px;
+}
+
+/* 分页样式优化 */
+.tablenav-pages {
+    margin-top: 15px;
+}
+
+.tablenav-pages .button {
+    min-width: 30px;
+    text-align: center;
+}
+
+/* 卡片设置页面整体样式 */
+.wrap .card {
+    padding: 20px;
+    margin-bottom: 20px;
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+}
+
+.wrap h2 {
+    margin-top: 0;
+}
+
+/* 模态框样式 */
+.chfm-modal {
+    display: none;
+    position: fixed;
+    z-index: 999999;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.4);
+}
+
+.chfm-modal-content {
+    background-color: #fefefe;
+    margin: 5% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%;
+    max-width: 600px;
+    border-radius: 4px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.chfm-modal-close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.chfm-modal-close:hover,
+.chfm-modal-close:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+/* 表单字段样式 */
+.form-field {
+    margin-bottom: 15px;
+}
+
+.form-field label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+/* 响应式表格 */
+@media screen and (max-width: 782px) {
+    .chfm-responsive-table {
+        border: 0;
+    }
+    
+    .chfm-responsive-table thead {
+        border: none;
+        clip: rect(0 0 0 0);
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        padding: 0;
+        position: absolute;
+        width: 1px;
+    }
+    
+    .chfm-responsive-table tr {
+        border-bottom: 3px solid #ddd;
+        display: block;
+        margin-bottom: 10px;
+    }
+    
+    .chfm-responsive-table td {
+        border-bottom: 1px solid #ddd;
+        display: block;
+        text-align: right;
+        padding: 8px;
+    }
+    
+    .chfm-responsive-table td::before {
+        content: attr(data-label);
+        float: left;
+        font-weight: bold;
+    }
+    
+    .chfm-responsive-table td:last-child {
+        border-bottom: 0;
+    }
+}
