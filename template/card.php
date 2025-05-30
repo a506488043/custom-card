@@ -1,8 +1,13 @@
 <?php
 /**
- * 卡片模板 - 严谨版字段显示控制
+ * 卡片模板 - 安全增强版
  */
- if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
+// 安全检查：防止直接访问PHP文件
+if (!defined('ABSPATH')) {
+    exit; // Exit if accessed directly
+}
+
+// 安全处理显示逻辑
 $show_title = !empty($data['title']);
 $show_image = !empty($data['image']);
 $show_desc = !empty($data['description']);
@@ -11,8 +16,8 @@ $force_show_url = !$show_title && !$show_desc && !$show_image; // 三者都没�
 <a href="<?php echo esc_url($data['url']); ?>" 
    class="strict-card" 
    target="_blank"
-   style="background: #f5f5f5;"
    rel="noopener noreferrer"
+   style="background: #f5f5f5;"
    aria-label="<?php echo $show_title ? esc_attr($data['title']) : esc_attr($data['url']); ?>">
 
     <div class="strict-inner" >
@@ -20,8 +25,9 @@ $force_show_url = !$show_title && !$show_desc && !$show_image; // 三者都没�
             <div class="strict-media">
                 <img src="<?php echo esc_url($data['image']); ?>" 
                      class="strict-img" 
-                     alt="<?php echo $show_title ? esc_attr($data['title']) : '内容卡片'; ?>"
-                     loading="lazy">
+                     alt="<?php echo $show_title ? esc_attr($data['title']) : esc_attr('内容卡片'); ?>"
+                     loading="lazy"
+                     onerror="this.style.display='none'">
             </div>
         <?php endif; ?>
 

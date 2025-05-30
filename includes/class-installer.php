@@ -7,12 +7,26 @@ class CCP_Installer {
     const TABLE_NAME = 'cards';
 
     public static function activate() {
+        // 检查用户权限
+        if (!current_user_can('activate_plugins')) {
+            return;
+        }
+        
         self::create_tables();
         self::update_db_version();
+        
+        // 记录激活日志
+        error_log('Custom Card Plugin: Plugin activated successfully');
     }
 
     public static function deactivate() {
-        // 按需添加清理代码
+        // 检查用户权限
+        if (!current_user_can('activate_plugins')) {
+            return;
+        }
+        
+        // 记录停用日志
+        error_log('Custom Card Plugin: Plugin deactivated');
     }
 
     private static function create_tables() {
@@ -33,6 +47,11 @@ class CCP_Installer {
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
+        
+        // 检查数据库错误
+        if (!empty($wpdb->last_error)) {
+            error_log('Custom Card Plugin: Database error during table creation: ' . $wpdb->last_error);
+        }
     }
 
     private static function update_db_version() {
