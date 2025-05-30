@@ -5,10 +5,7 @@ Version: 5.1.0
 Tested up to: 6.5.1
 Description: 完全支持URL存储的卡片插件终极版 | 安全增强版
 */
-// 安全检查：防止直接访问PHP文件
-if (!defined('ABSPATH')) {
-    exit; // Exit if accessed directly
-}
+
 
 class ChfmCard_DBManager {
     const CACHE_EXPIRE_HOURS = 72;
