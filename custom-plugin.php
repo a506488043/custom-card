@@ -859,7 +859,7 @@ class Chf_Card_Plugin_Core {
         } catch (Exception $e) {
             error_log('ChfmCard: Error fetching metadata: ' . $e->getMessage());
             return [
-                'error' => '无法获取URL元数据',
+                //'error' => '无法获取URL元数据', 这行代码有问题，获取不到URL，可以直接显示URL的host，而不是显示错误信息；
                 'url' => $raw_url,
                 'title' => parse_url($raw_url, PHP_URL_HOST),
                 'image' => '',
