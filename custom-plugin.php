@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: 网站卡片
-Version: 5.2.6 
+Version: 5.3.0 
 Tested up to: 6.5.1
 Description: 完全支持URL存储的卡片插件终极版 | 安全增强版 | 多级缓存版
 */
@@ -112,7 +112,7 @@ register_deactivation_hook(__FILE__, ['ChfmCard_DBManager', 'uninstall_tables'])
 // === 核心类 ===
 class Chf_Card_Plugin_Core {
     // 定义插件常量
-    const PLUGIN_VERSION = '5.2.6';
+    const PLUGIN_VERSION = '5.3.0';
     const NONCE_ACTION = 'chf_card_security';
     const RATE_LIMIT_THRESHOLD = 10; // 每分钟请求限制
     const ITEMS_PER_PAGE = 10; // 每页显示的缓存项数量
@@ -148,7 +148,8 @@ class Chf_Card_Plugin_Core {
      * 添加管理页面样式
      */
     public function admin_enqueue_scripts($hook) {
-        if ('settings_page_chfm-card-settings' !== $hook) {
+        // 检查是否是网站卡片相关页面
+        if (!in_array($hook, ['toplevel_page_toolbox-main', 'toolbox_page_toolbox-function-cards'])) {
             return;
         }
         
@@ -204,16 +205,6 @@ class Chf_Card_Plugin_Core {
         $image = esc_url_raw($_POST['image']);
         $description = sanitize_textarea_field($_POST['description']);
         
-        // 获取原始URL
-        global $wpdb;
-        $table = $wpdb->prefix . 'chf_card_cache';
-        $url = $wpdb->get_var($wpdb->prepare("SELECT url FROM $table WHERE url_hash = %s", $url_hash));
-        
-        if (!$url) {
-            wp_send_json_error(['message' => '找不到对应的缓存项']);
-            return;
-        }
-        
         // 更新数据
         $data = [
             'title' => $title,
@@ -221,23 +212,10 @@ class Chf_Card_Plugin_Core {
             'description' => $description
         ];
         
-        // 更新数据库
-        $result = $wpdb->update(
-            $table,
-            [
-                'title' => $title,
-                'image' => $image,
-                'description' => $description
-            ],
-            ['url_hash' => $url_hash],
-            ['%s', '%s', '%s'],
-            ['%s']
-        );
+        // 使用缓存管理器更新数据
+        $result = $this->cache_manager->update($url_hash, $data);
         
-        // 更新缓存
-        $this->cache_manager->set($url_hash, $data);
-        
-        if ($result !== false) {
+        if ($result) {
             wp_send_json_success(['message' => '卡片数据已成功更新']);
         } else {
             wp_send_json_error(['message' => '更新失败，请重试']);
@@ -248,14 +226,88 @@ class Chf_Card_Plugin_Core {
      * 添加管理菜单
      */
     public function add_admin_menu() {
-        add_submenu_page(
-            'options-general.php',
-            '网站卡片设置',
-            '网站卡片',
-            'manage_options',
-            'chfm-card-settings',
-            [$this, 'render_settings_page']
+        // 添加网站卡片主菜单
+        add_menu_page(
+            '网站卡片',                    // 页面标题
+            '网站卡片',                    // 菜单标题
+            'manage_options',            // 权限
+            'toolbox-main',              // 菜单slug
+            [$this, 'render_settings_page'], // 回调函数
+            'dashicons-admin-tools',     // 图标
+            30                           // 位置
         );
+        
+        // 添加缓存和使用说明子菜单
+        add_submenu_page(
+            'toolbox-main',              // 父菜单slug
+            '缓存和使用说明',              // 页面标题
+            '缓存和使用说明',              // 菜单标题
+            'manage_options',            // 权限
+            'toolbox-function-cards',    // 菜单slug
+            [$this, 'render_cache_usage_page'] // 回调函数
+        );
+    }
+    
+    /**
+     * 渲染缓存状态和使用说明页面
+     */
+    public function render_cache_usage_page() {
+        // 处理缓存清理操作
+        if (isset($_POST['chfm_clear_cache']) && check_admin_referer('chfm_clear_cache_nonce')) {
+            $this->cache_manager->flush();
+            echo '<div class="notice notice-success"><p>缓存已清理！</p></div>';
+        }
+        
+        // 获取缓存状态
+        $cache_status = $this->cache_manager->get_cache_status();
+        $total_items = $this->cache_manager->get_items_count();
+        
+        // 显示缓存状态和使用说明页面
+        ?>
+        <div class="wrap">
+            <h1>缓存和使用说明</h1>
+            
+            <!-- 缓存状态和使用说明 - 左右布局 -->
+            <div style="display: flex; gap: 20px; margin-top: 20px;">
+                <!-- 左侧：缓存状态 -->
+                <div style="flex: 1;">
+                    <div class="card">
+                        <h2>缓存状态</h2>
+                        <table class="form-table">
+                            <tr>
+                                <th>Memcached 缓存:</th>
+                                <td><?php echo $cache_status['memcached'] ? '<span style="color:green">✓ 已启用</span>' : '<span style="color:red">✗ 未启用</span>'; ?></td>
+                            </tr>
+                            <tr>
+                                <th>Opcache 缓存:</th>
+                                <td><?php echo $cache_status['opcache'] ? '<span style="color:green">✓ 已启用</span>' : '<span style="color:red">✗ 未启用</span>'; ?></td>
+                            </tr>
+                            <tr>
+                                <th>缓存项总数:</th>
+                                <td><?php echo $total_items; ?></td>
+                            </tr>
+                        </table>
+                        
+                        <form method="post">
+                            <?php wp_nonce_field('chfm_clear_cache_nonce'); ?>
+                            <p><input type="submit" name="chfm_clear_cache" class="button button-primary" value="清理所有缓存"></p>
+                        </form>
+                    </div>
+                </div>
+                
+                <!-- 右侧：使用说明 -->
+                <div style="flex: 1;">
+                    <div class="card">
+                        <h2>使用说明</h2>
+                        <p>本插件支持多级缓存机制，数据先写入数据库，再同步到Opcache和Memcached缓存，提高访问速度。</p>
+                        <p>短代码用法: <code>[custom_card url="https://example.com"]</code></p>
+                        <p>区块编辑器中也可以直接添加"网站卡片"区块。</p>
+                        <p>点击上方列表中的"编辑"按钮可以修改缓存的卡片数据。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php
     }
     
     /**
@@ -273,29 +325,21 @@ class Chf_Card_Plugin_Core {
             $url_hash = sanitize_text_field($_GET['url_hash']);
             $this->cache_manager->delete($url_hash);
             
-            // 同时从数据库中删除
-            global $wpdb;
-            $table = $wpdb->prefix . 'chf_card_cache';
-            $wpdb->delete($table, ['url_hash' => $url_hash], ['%s']);
-            
             echo '<div class="notice notice-success"><p>已删除指定缓存项！</p></div>';
         }
-        
-        // 获取缓存状态
-        $cache_status = $this->cache_manager->get_cache_status();
         
         // 获取当前页码
         $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
         
         // 获取缓存列表
-        $cache_items = $this->get_cached_cards($current_page);
-        $total_items = $this->get_cached_cards_count();
+        $cache_items = $this->cache_manager->get_all_items($current_page, self::ITEMS_PER_PAGE);
+        $total_items = $this->cache_manager->get_items_count();
         $total_pages = ceil($total_items / self::ITEMS_PER_PAGE);
         
         // 显示设置页面
         ?>
         <div class="wrap">
-            <h1>网站卡片设置</h1>
+            <h1>网站卡片</h1>
             
             <!-- 第一行：已缓存的网站卡片 -->
             <div class="card chfm-full-width-card">
@@ -349,12 +393,12 @@ class Chf_Card_Plugin_Core {
                                             $delete_url = wp_nonce_url(
                                                 add_query_arg(
                                                     array(
-                                                        'page' => 'chfm-card-settings',
+                                                        'page' => 'toolbox-website-cards',
                                                         'action' => 'delete',
                                                         'url_hash' => $item->url_hash,
                                                         'paged' => $current_page,
                                                     ),
-                                                    admin_url('options-general.php')
+                                                    admin_url('admin.php')
                                                 ),
                                                 'chfm_delete_cache_' . $item->url_hash
                                             );
@@ -418,46 +462,6 @@ class Chf_Card_Plugin_Core {
                     <?php endif; ?>
                 </div>
             </div>
-            
-            <!-- 第二行：缓存状态和使用说明 -->
-            <div class="chfm-flex-container">
-                <!-- 左侧：缓存状态 -->
-                <div class="chfm-flex-item">
-                    <div class="card">
-                        <h2>缓存状态</h2>
-                        <table class="form-table">
-                            <tr>
-                                <th>Memcached 缓存:</th>
-                                <td><?php echo $cache_status['memcached'] ? '<span style="color:green">✓ 已启用</span>' : '<span style="color:red">✗ 未启用</span>'; ?></td>
-                            </tr>
-                            <tr>
-                                <th>Opcache 缓存:</th>
-                                <td><?php echo $cache_status['opcache'] ? '<span style="color:green">✓ 已启用</span>' : '<span style="color:red">✗ 未启用</span>'; ?></td>
-                            </tr>
-                            <tr>
-                                <th>缓存项总数:</th>
-                                <td><?php echo $total_items; ?></td>
-                            </tr>
-                        </table>
-                        
-                        <form method="post">
-                            <?php wp_nonce_field('chfm_clear_cache_nonce'); ?>
-                            <p><input type="submit" name="chfm_clear_cache" class="button button-primary" value="清理所有缓存"></p>
-                        </form>
-                    </div>
-                </div>
-                
-                <!-- 右侧：使用说明 -->
-                <div class="chfm-flex-item">
-                    <div class="card">
-                        <h2>使用说明</h2>
-                        <p>本插件支持多级缓存机制，优先从Opcache和Memcached读取数据，提高访问速度。</p>
-                        <p>短代码用法: <code>[custom_card url="https://example.com"]</code></p>
-                        <p>区块编辑器中也可以直接添加"网站卡片"区块。</p>
-                        <p>点击上方列表中的"编辑"按钮可以修改缓存的卡片数据。</p>
-                    </div>
-                </div>
-            </div>
         </div>
         
         <!-- 编辑卡片模态框 -->
@@ -509,39 +513,6 @@ class Chf_Card_Plugin_Core {
         }
         
         return mb_substr($text, 0, $length, 'UTF-8') . '...';
-    }
-    
-    /**
-     * 获取缓存的卡片列表
-     * 
-     * @param int $page 页码
-     * @return array 缓存项列表
-     */
-    private function get_cached_cards($page = 1) {
-        global $wpdb;
-        $table = $wpdb->prefix . 'chf_card_cache';
-        
-        $offset = ($page - 1) * self::ITEMS_PER_PAGE;
-        
-        $query = $wpdb->prepare(
-            "SELECT url_hash, url, title, image, description, expires_at FROM $table ORDER BY expires_at DESC LIMIT %d OFFSET %d",
-            self::ITEMS_PER_PAGE,
-            $offset
-        );
-        
-        return $wpdb->get_results($query);
-    }
-    
-    /**
-     * 获取缓存卡片总数
-     * 
-     * @return int 缓存项总数
-     */
-    private function get_cached_cards_count() {
-        global $wpdb;
-        $table = $wpdb->prefix . 'chf_card_cache';
-        
-        return (int) $wpdb->get_var("SELECT COUNT(*) FROM $table");
     }
 
     public function load_assets() {
@@ -707,54 +678,13 @@ class Chf_Card_Plugin_Core {
     }
     
     /**
-     * 检查是否超出请求频率限制
+     * 检查是否超出请求频率限制 - 已禁用
      * 
-     * @return bool 是否被限流
+     * @return bool 始终返回false，不进行限流
      */
     private function is_rate_limited() {
-        // 获取客户端IP
-        $client_ip = $this->get_client_ip();
-
-        // 使用WordPress瞬态API
-        $cache_key = 'chf_card_rate_limit_' . md5($client_ip);
-        $request_count = get_transient($cache_key) ?: 0;
-
-        // 检查是否超出限制阈值
-        if ($request_count >= self::RATE_LIMIT_THRESHOLD) {
-            // 记录限流日志
-            error_log('ChfmCard: Rate limit exceeded for IP: ' . $client_ip);
-            return true;
-        }
-
-        // 设置过期时间（60秒）并自动累加
-        set_transient($cache_key, $request_count + 1, 60);
+        // 已禁用限流功能，始终返回false
         return false;
-    }
-
-    /**
-     * 获取客户端IP地址
-     * 
-     * @return string 客户端IP
-     */
-    private function get_client_ip() {
-        // 安全获取IP地址
-        $ip_keys = array(
-            'HTTP_CLIENT_IP',
-            'HTTP_X_FORWARDED_FOR',
-            'HTTP_X_FORWARDED',
-            'HTTP_X_CLUSTER_CLIENT_IP',
-            'HTTP_FORWARDED_FOR',
-            'HTTP_FORWARDED',
-            'REMOTE_ADDR'
-        );
-        
-        foreach ($ip_keys as $key) {
-            if (isset($_SERVER[$key]) && filter_var($_SERVER[$key], FILTER_VALIDATE_IP)) {
-                return $_SERVER[$key];
-            }
-        }
-        
-        return '0.0.0.0';
     }    
     
     /**
@@ -769,10 +699,8 @@ class Chf_Card_Plugin_Core {
             return ['error' => '请求过于频繁，请稍后再试'];
         }
         
-        global $wpdb;
         $raw_url = esc_url_raw($user_input['url']);
         $url_hash = md5($raw_url);
-        $table = $wpdb->prefix . 'chf_card_cache';
         
         // 清洗输入字段
         $user_input['title'] = $this->sanitize_field($user_input['title'] ?? '');
@@ -794,54 +722,9 @@ class Chf_Card_Plugin_Core {
             return array_merge($base_data, $cache_data);
         }
         
-        // 2. 缓存未命中，尝试从数据库获取
-        $db_cache = $wpdb->get_row(
-            $wpdb->prepare(
-                "SELECT title, image, description, expires_at FROM $table WHERE url_hash = %s AND expires_at > NOW() LIMIT 1", 
-                $url_hash
-            )
-        );
-        
-        if ($db_cache) {
-            // 数据库缓存命中
-            $merged_data = array_merge(
-                $base_data, 
-                [
-                    'title' => $db_cache->title, 
-                    'image' => $db_cache->image, 
-                    'description' => $db_cache->description
-                ]
-            );
-            
-            // 将数据库数据同步到多级缓存
-            $this->cache_manager->set($url_hash, [
-                'title' => $db_cache->title,
-                'image' => $db_cache->image,
-                'description' => $db_cache->description
-            ]);
-            
-            // 检查缓存是否需要刷新（标题为空且已过期）
-            if (empty($db_cache->title) && strtotime($db_cache->expires_at) < time()) {
-                try {
-                    $metadata = $this->fetch_url_metadata($raw_url);
-                    $merged_data = array_merge($base_data, [
-                        'title' => $metadata['title'],
-                        'image' => $metadata['image'],
-                        'description' => $metadata['description']
-                    ]);
-                    
-                    // 更新数据库缓存和多级缓存
-                    $this->update_cache($url_hash, $raw_url, $merged_data);
-                } catch (Exception $e) {
-                    error_log('ChfmCard: Error refreshing cache: ' . $e->getMessage());
-                }
-            }
-            
-            return $merged_data;
-        }
-        
-        // 3. 数据库缓存也未命中，需要获取新数据
+        // 2. 缓存未命中，需要获取新数据
         try {
+            // 尝试获取元数据
             $metadata = $this->fetch_url_metadata($raw_url);
             $merged_data = array_merge(
                 $base_data, 
@@ -852,65 +735,31 @@ class Chf_Card_Plugin_Core {
                 ]
             );
             
-            // 更新数据库缓存和多级缓存
-            $this->update_cache($url_hash, $raw_url, $merged_data);
+            // 3. 先保存到数据库，再同步到缓存层
+            $this->cache_manager->set($url_hash, $raw_url, [
+                'title' => $metadata['title'],
+                'image' => $metadata['image'],
+                'description' => $metadata['description']
+            ]);
             
             return $merged_data;
         } catch (Exception $e) {
+            // 记录错误日志
             error_log('ChfmCard: Error fetching metadata: ' . $e->getMessage());
-            return [
-                //'error' => '无法获取URL元数据', 这行代码有问题，获取不到URL，可以直接显示URL的host，而不是显示错误信息；
-                'url' => $raw_url,
+            
+            // 创建默认数据
+            $fallback_data = [
                 'title' => parse_url($raw_url, PHP_URL_HOST),
                 'image' => '',
                 'description' => ''
             ];
+            
+            // 即使获取失败，也将默认数据写入数据库和缓存
+            $this->cache_manager->set($url_hash, $raw_url, $fallback_data);
+            
+            // 返回合并后的数据
+            return array_merge($base_data, $fallback_data);
         }
-    }
-    
-    /**
-     * 更新缓存数据
-     * 
-     * @param string $url_hash URL哈希
-     * @param string $raw_url 原始URL
-     * @param array $data 卡片数据
-     */
-    private function update_cache($url_hash, $raw_url, $data) {
-        global $wpdb;
-        $table = $wpdb->prefix . 'chf_card_cache';
-        
-        // 1. 更新数据库缓存
-        $result = $wpdb->replace(
-            $table,
-            [
-                'url_hash' => $url_hash,
-                'url' => $raw_url,
-                'title' => sanitize_text_field($data['title']),
-                'image' => esc_url_raw($data['image']),
-                'description' => sanitize_textarea_field($data['description']),
-                'expires_at' => date('Y-m-d H:i:s', time() + (ChfmCard_DBManager::CACHE_EXPIRE_HOURS * 3600))
-            ],
-            [
-                '%s', // url_hash
-                '%s', // url
-                '%s', // title
-                '%s', // image
-                '%s', // description
-                '%s'  // expires_at
-            ]
-        );
-        
-        // 记录数据库错误
-        if ($result === false) {
-            error_log('ChfmCard: Database error: ' . $wpdb->last_error);
-        }
-        
-        // 2. 更新多级缓存
-        $this->cache_manager->set($url_hash, [
-            'title' => $data['title'],
-            'image' => $data['image'],
-            'description' => $data['description']
-        ]);
     }
     
     /**

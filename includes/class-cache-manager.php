@@ -3,6 +3,7 @@
  * 缓存管理器类
  * 
  * 提供多级缓存支持，包括Opcache和Memcached
+ * 优化的数据流：先写入数据库，再同步到缓存层
  */
 
 // 安全检查：防止直接访问PHP文件
@@ -135,6 +136,17 @@ class ChfmCard_Cache_Manager {
             }
         }
         
+        // 3. 如果缓存都未命中，尝试从数据库获取并同步到缓存
+        if ($data === false) {
+            $data = $this->get_from_database($url_hash);
+            if ($data !== false) {
+                $cache_source = 'database';
+                
+                // 同步到缓存层
+                $this->sync_to_cache($url_hash, $data);
+            }
+        }
+        
         // 记录缓存命中情况
         if ($data !== false) {
             error_log(sprintf('ChfmCard: 缓存命中 [%s] - %s', $cache_source, $url_hash));
@@ -144,45 +156,132 @@ class ChfmCard_Cache_Manager {
     }
     
     /**
-     * 保存数据到缓存
+     * 从数据库获取数据
      * 
      * @param string $url_hash URL哈希值
-     * @param array $data 要缓存的数据
-     * @return bool 是否成功
+     * @return array|false 数据库数据或false（未找到）
      */
-    public function set($url_hash, $data) {
-        $cache_key = $this->get_cache_key($url_hash);
-        $success = false;
+    private function get_from_database($url_hash) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'chf_card_cache';
         
-        // 1. 保存到Memcached
-        if ($this->memcached_enabled) {
-            $success = $this->memcached->set($cache_key, $data, self::CACHE_EXPIRE);
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT title, image, description FROM $table WHERE url_hash = %s AND expires_at > NOW() LIMIT 1", 
+                $url_hash
+            ),
+            ARRAY_A
+        );
+        
+        if (!$row) {
+            return false;
         }
         
-        // 2. 保存到Opcache
-        if ($this->opcache_enabled) {
-            $success = $this->save_to_opcache($url_hash, $data) || $success;
-        }
-        
-        return $success;
+        return [
+            'title' => $row['title'],
+            'image' => $row['image'],
+            'description' => $row['description']
+        ];
     }
     
     /**
-     * 删除缓存
+     * 同步数据到缓存层
+     * 
+     * @param string $url_hash URL哈希值
+     * @param array $data 要缓存的数据
+     */
+    private function sync_to_cache($url_hash, $data) {
+        // 1. 同步到Memcached
+        if ($this->memcached_enabled) {
+            $cache_key = $this->get_cache_key($url_hash);
+            $this->memcached->set($cache_key, $data, self::CACHE_EXPIRE);
+        }
+        
+        // 2. 同步到Opcache
+        if ($this->opcache_enabled) {
+            $this->save_to_opcache($url_hash, $data);
+        }
+    }
+    
+    /**
+     * 保存数据到数据库并同步到缓存
+     * 
+     * @param string $url_hash URL哈希值
+     * @param string $url 原始URL
+     * @param array $data 要缓存的数据
+     * @return bool 是否成功
+     */
+    public function set($url_hash, $url, $data) {
+        // 1. 首先保存到数据库
+        $db_success = $this->save_to_database($url_hash, $url, $data);
+        
+        // 2. 然后同步到缓存层
+        if ($db_success) {
+            $this->sync_to_cache($url_hash, $data);
+        }
+        
+        return $db_success;
+    }
+    
+    /**
+     * 保存数据到数据库
+     * 
+     * @param string $url_hash URL哈希值
+     * @param string $url 原始URL
+     * @param array $data 要保存的数据
+     * @return bool 是否成功
+     */
+    private function save_to_database($url_hash, $url, $data) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'chf_card_cache';
+        
+        // 准备数据
+        $db_data = [
+            'url_hash' => $url_hash,
+            'url' => $url,
+            'title' => isset($data['title']) ? $data['title'] : '',
+            'image' => isset($data['image']) ? $data['image'] : '',
+            'description' => isset($data['description']) ? $data['description'] : '',
+            'expires_at' => date('Y-m-d H:i:s', time() + self::CACHE_EXPIRE)
+        ];
+        
+        // 格式
+        $formats = ['%s', '%s', '%s', '%s', '%s', '%s'];
+        
+        // 尝试替换（插入或更新）
+        $result = $wpdb->replace($table, $db_data, $formats);
+        
+        // 记录数据库错误
+        if ($result === false) {
+            error_log('ChfmCard: 数据库写入错误: ' . $wpdb->last_error);
+            return false;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * 删除缓存和数据库中的数据
      * 
      * @param string $url_hash URL哈希值
      * @return bool 是否成功
      */
     public function delete($url_hash) {
-        $cache_key = $this->get_cache_key($url_hash);
         $success = false;
         
-        // 1. 从Memcached删除
+        // 1. 从数据库删除
+        global $wpdb;
+        $table = $wpdb->prefix . 'chf_card_cache';
+        $db_result = $wpdb->delete($table, ['url_hash' => $url_hash], ['%s']);
+        $success = ($db_result !== false);
+        
+        // 2. 从Memcached删除
         if ($this->memcached_enabled) {
-            $success = $this->memcached->delete($cache_key);
+            $cache_key = $this->get_cache_key($url_hash);
+            $this->memcached->delete($cache_key);
         }
         
-        // 2. 从Opcache删除
+        // 3. 从Opcache删除
         if ($this->opcache_enabled) {
             $opcache_file = $this->get_opcache_file($url_hash);
             if (file_exists($opcache_file)) {
@@ -190,7 +289,6 @@ class ChfmCard_Cache_Manager {
                 if (function_exists('opcache_invalidate')) {
                     opcache_invalidate($opcache_file, true);
                 }
-                $success = true;
             }
         }
         
@@ -198,19 +296,27 @@ class ChfmCard_Cache_Manager {
     }
     
     /**
-     * 清空所有缓存
+     * 清空所有缓存和数据库缓存
      * 
+     * @param bool $clear_db 是否同时清空数据库
      * @return bool 是否成功
      */
-    public function flush() {
+    public function flush($clear_db = true) {
         $success = false;
         
-        // 1. 清空Memcached
+        // 1. 清空数据库
+        if ($clear_db) {
+            global $wpdb;
+            $table = $wpdb->prefix . 'chf_card_cache';
+            $wpdb->query("TRUNCATE TABLE $table");
+        }
+        
+        // 2. 清空Memcached
         if ($this->memcached_enabled) {
             $success = $this->memcached->flush();
         }
         
-        // 2. 清空Opcache文件
+        // 3. 清空Opcache文件
         if ($this->opcache_enabled) {
             $cache_dir = $this->get_opcache_dir();
             if (is_dir($cache_dir)) {
@@ -348,5 +454,75 @@ class ChfmCard_Cache_Manager {
             'opcache' => $this->opcache_enabled,
             'any_available' => $this->is_cache_available(),
         ];
+    }
+    
+    /**
+     * 更新缓存项
+     * 
+     * @param string $url_hash URL哈希值
+     * @param array $data 新数据
+     * @return bool 是否成功
+     */
+    public function update($url_hash, $data) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'chf_card_cache';
+        
+        // 1. 更新数据库
+        $result = $wpdb->update(
+            $table,
+            [
+                'title' => isset($data['title']) ? $data['title'] : '',
+                'image' => isset($data['image']) ? $data['image'] : '',
+                'description' => isset($data['description']) ? $data['description'] : '',
+                'expires_at' => date('Y-m-d H:i:s', time() + self::CACHE_EXPIRE)
+            ],
+            ['url_hash' => $url_hash],
+            ['%s', '%s', '%s', '%s'],
+            ['%s']
+        );
+        
+        if ($result === false) {
+            error_log('ChfmCard: 数据库更新错误: ' . $wpdb->last_error);
+            return false;
+        }
+        
+        // 2. 同步到缓存层
+        $this->sync_to_cache($url_hash, $data);
+        
+        return true;
+    }
+    
+    /**
+     * 获取所有缓存项
+     * 
+     * @param int $page 页码
+     * @param int $per_page 每页项数
+     * @return array 缓存项列表
+     */
+    public function get_all_items($page = 1, $per_page = 10) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'chf_card_cache';
+        
+        $offset = ($page - 1) * $per_page;
+        
+        $query = $wpdb->prepare(
+            "SELECT url_hash, url, title, image, description, expires_at FROM $table ORDER BY expires_at DESC LIMIT %d OFFSET %d",
+            $per_page,
+            $offset
+        );
+        
+        return $wpdb->get_results($query);
+    }
+    
+    /**
+     * 获取缓存项总数
+     * 
+     * @return int 缓存项总数
+     */
+    public function get_items_count() {
+        global $wpdb;
+        $table = $wpdb->prefix . 'chf_card_cache';
+        
+        return (int) $wpdb->get_var("SELECT COUNT(*) FROM $table");
     }
 }
