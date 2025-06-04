@@ -149,7 +149,7 @@ class Chf_Card_Plugin_Core {
      */
     public function admin_enqueue_scripts($hook) {
         // 检查是否是网站卡片相关页面
-        if (!in_array($hook, ['toplevel_page_toolbox-main', 'toolbox_page_toolbox-function-cards'])) {
+        if (!in_array($hook, ['toplevel_page_toolbox-main', 'toolbox_page_toolbox-function-cards', 'toolbox_page_toolbox-website-cards'])) {
             return;
         }
         
@@ -240,12 +240,13 @@ class Chf_Card_Plugin_Core {
         // 添加缓存和使用说明子菜单
         add_submenu_page(
             'toolbox-main',              // 父菜单slug
-            '缓存和使用说明',              // 页面标题
-            '缓存和使用说明',              // 菜单标题
+            '缓存状态和使用说明',              // 页面标题
+            '缓存状态和使用说明',              // 菜单标题
             'manage_options',            // 权限
             'toolbox-function-cards',    // 菜单slug
             [$this, 'render_cache_usage_page'] // 回调函数
         );
+
     }
     
     /**
@@ -393,7 +394,7 @@ class Chf_Card_Plugin_Core {
                                             $delete_url = wp_nonce_url(
                                                 add_query_arg(
                                                     array(
-                                                        'page' => 'toolbox-website-cards',
+                                                        'page' => isset($_GET['page']) ? $_GET['page'] : 'toolbox-main',
                                                         'action' => 'delete',
                                                         'url_hash' => $item->url_hash,
                                                         'paged' => $current_page,
