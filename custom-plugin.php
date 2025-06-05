@@ -1,9 +1,9 @@
 <?php
 /*
 Plugin Name: 网站卡片
-Version: 5.3.0 
+Version: 5.3.1 
 Tested up to: 6.5.1
-Description: 完全支持URL存储的卡片插件终极版 | 安全增强版 | 多级缓存版
+Description: 完全支持URL存储的卡片插件终极版 | 安全增强版 | 多级缓存版 | 修复URL拼接问题
 */
 // 安全检查：防止直接访问PHP文件
 if (!defined('ABSPATH')) {
@@ -112,7 +112,7 @@ register_deactivation_hook(__FILE__, ['ChfmCard_DBManager', 'uninstall_tables'])
 // === 核心类 ===
 class Chf_Card_Plugin_Core {
     // 定义插件常量
-    const PLUGIN_VERSION = '5.3.0';
+    const PLUGIN_VERSION = '5.3.1';
     const NONCE_ACTION = 'chf_card_security';
     const RATE_LIMIT_THRESHOLD = 10; // 每分钟请求限制
     const ITEMS_PER_PAGE = 10; // 每页显示的缓存项数量
@@ -407,11 +407,27 @@ class Chf_Card_Plugin_Core {
                                             <button type="button" class="button button-small edit-card-btn" data-url-hash="<?php echo esc_attr($item->url_hash); ?>">编辑</button>
                                             <a href="<?php echo esc_url($delete_url); ?>" class="button button-small" onclick="return confirm('确定要删除此缓存项吗？');">删除</a>
                                             
-                                            <!-- 隐藏的完整数据，用于编辑 -->
-                                            <div class="hidden-card-data">
-                                                <input type="hidden" class="card-full-title" value="<?php echo esc_attr($item->title); ?>">
-                                                <input type="hidden" class="card-full-image" value="<?php echo esc_attr($item->image); ?>">
-                                                <input type="hidden" class="card-full-description" value="<?php echo esc_attr($item->description); ?>">
+                                            <!-- 隐藏的编辑表单 -->
+                                            <div class="edit-form" id="edit-form-<?php echo esc_attr($item->url_hash); ?>" style="display: none;">
+                                                <h3>编辑卡片数据</h3>
+                                                <table class="form-table">
+                                                    <tr>
+                                                        <th><label for="edit-title-<?php echo esc_attr($item->url_hash); ?>">标题:</label></th>
+                                                        <td><input type="text" id="edit-title-<?php echo esc_attr($item->url_hash); ?>" value="<?php echo esc_attr($item->title); ?>" class="regular-text"></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <th><label for="edit-image-<?php echo esc_attr($item->url_hash); ?>">图片URL:</label></th>
+                                                        <td><input type="url" id="edit-image-<?php echo esc_attr($item->url_hash); ?>" value="<?php echo esc_attr($item->image); ?>" class="regular-text"></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <th><label for="edit-description-<?php echo esc_attr($item->url_hash); ?>">描述:</label></th>
+                                                        <td><textarea id="edit-description-<?php echo esc_attr($item->url_hash); ?>" rows="3" class="large-text"><?php echo esc_textarea($item->description); ?></textarea></td>
+                                                    </tr>
+                                                </table>
+                                                <p>
+                                                    <button type="button" class="button button-primary save-edit-btn" data-url-hash="<?php echo esc_attr($item->url_hash); ?>">保存</button>
+                                                    <button type="button" class="button cancel-edit-btn" data-url-hash="<?php echo esc_attr($item->url_hash); ?>">取消</button>
+                                                </p>
                                             </div>
                                         </td>
                                     </tr>
@@ -419,83 +435,27 @@ class Chf_Card_Plugin_Core {
                             </tbody>
                         </table>
                         
+                        <!-- 分页导航 -->
                         <?php if ($total_pages > 1): ?>
                             <div class="tablenav">
                                 <div class="tablenav-pages">
-                                    <span class="displaying-num"><?php echo sprintf('共 %d 项', $total_items); ?></span>
-                                    <span class="pagination-links">
-                                        <?php
-                                        // 首页链接
-                                        if ($current_page > 1) {
-                                            echo '<a class="first-page button" href="' . esc_url(add_query_arg('paged', 1)) . '"><span class="screen-reader-text">首页</span><span aria-hidden="true">«</span></a>';
-                                        } else {
-                                            echo '<span class="first-page button disabled"><span class="screen-reader-text">首页</span><span aria-hidden="true">«</span></span>';
-                                        }
-                                        
-                                        // 上一页链接
-                                        if ($current_page > 1) {
-                                            echo '<a class="prev-page button" href="' . esc_url(add_query_arg('paged', $current_page - 1)) . '"><span class="screen-reader-text">上一页</span><span aria-hidden="true">‹</span></a>';
-                                        } else {
-                                            echo '<span class="prev-page button disabled"><span class="screen-reader-text">上一页</span><span aria-hidden="true">‹</span></span>';
-                                        }
-                                        
-                                        // 页码显示
-                                        echo '<span class="paging-input">' . $current_page . '/' . $total_pages . '</span>';
-                                        
-                                        // 下一页链接
-                                        if ($current_page < $total_pages) {
-                                            echo '<a class="next-page button" href="' . esc_url(add_query_arg('paged', $current_page + 1)) . '"><span class="screen-reader-text">下一页</span><span aria-hidden="true">›</span></a>';
-                                        } else {
-                                            echo '<span class="next-page button disabled"><span class="screen-reader-text">下一页</span><span aria-hidden="true">›</span></span>';
-                                        }
-                                        
-                                        // 末页链接
-                                        if ($current_page < $total_pages) {
-                                            echo '<a class="last-page button" href="' . esc_url(add_query_arg('paged', $total_pages)) . '"><span class="screen-reader-text">末页</span><span aria-hidden="true">»</span></a>';
-                                        } else {
-                                            echo '<span class="last-page button disabled"><span class="screen-reader-text">末页</span><span aria-hidden="true">»</span></span>';
-                                        }
-                                        ?>
-                                    </span>
+                                    <?php
+                                    $page_links = paginate_links(array(
+                                        'base' => add_query_arg('paged', '%#%'),
+                                        'format' => '',
+                                        'prev_text' => '&laquo; 上一页',
+                                        'next_text' => '下一页 &raquo;',
+                                        'total' => $total_pages,
+                                        'current' => $current_page,
+                                        'type' => 'plain',
+                                    ));
+                                    echo $page_links;
+                                    ?>
                                 </div>
                             </div>
                         <?php endif; ?>
                     <?php endif; ?>
                 </div>
-            </div>
-        </div>
-        
-        <!-- 编辑卡片模态框 -->
-        <div id="edit-card-modal" class="chfm-modal">
-            <div class="chfm-modal-content">
-                <span class="chfm-modal-close">&times;</span>
-                <h2>编辑卡片数据</h2>
-                <form id="edit-card-form">
-                    <input type="hidden" id="edit-url-hash" name="url_hash" value="">
-                    
-                    <div class="form-field">
-                        <label for="edit-title">标题:</label>
-                        <input type="text" id="edit-title" name="title" class="regular-text">
-                    </div>
-                    
-                    <div class="form-field">
-                        <label for="edit-image">图片URL:</label>
-                        <input type="url" id="edit-image" name="image" class="regular-text">
-                        <div id="image-preview-container">
-                            <img id="image-preview" src="" alt="图片预览" style="max-width: 200px; max-height: 150px; margin-top: 10px; display: none;">
-                        </div>
-                    </div>
-                    
-                    <div class="form-field">
-                        <label for="edit-description">描述:</label>
-                        <textarea id="edit-description" name="description" rows="5" class="large-text"></textarea>
-                    </div>
-                    
-                    <div class="form-field">
-                        <button type="submit" class="button button-primary">保存更改</button>
-                        <div id="edit-status" style="display: none; margin-top: 10px;"></div>
-                    </div>
-                </form>
             </div>
         </div>
         <?php
@@ -504,47 +464,45 @@ class Chf_Card_Plugin_Core {
     /**
      * 截断文本
      * 
-     * @param string $text 要截断的文本
+     * @param string $text 原文本
      * @param int $length 最大长度
      * @return string 截断后的文本
      */
-    private function truncate_text($text, $length = 30) {
-        if (mb_strlen($text, 'UTF-8') <= $length) {
-            return $text;
+    private function truncate_text($text, $length) {
+        if (mb_strlen($text) > $length) {
+            return mb_substr($text, 0, $length) . '...';
         }
-        
-        return mb_substr($text, 0, $length, 'UTF-8') . '...';
+        return $text;
     }
-
+    
+    /**
+     * 加载前端资源
+     */
     public function load_assets() {
-        $base_path = plugin_dir_path(__FILE__);
-        $css_path = $base_path . 'assets/chf-card.css';
-        if (file_exists($css_path)) {
-            wp_enqueue_style(
-                'custom-card-style', 
-                plugins_url('assets/chf-card.css', __FILE__), 
-                array(), 
-                filemtime($css_path)
-            );
-        }
+        wp_enqueue_style(
+            'chfm-card-style',
+            plugins_url('assets/style.css', __FILE__),
+            array(),
+            self::PLUGIN_VERSION
+        );
         
-        $js_path = $base_path . 'assets/chf-card.js';
-        if (file_exists($js_path)) {
-            wp_enqueue_script(
-                'custom-card-script', 
-                plugins_url('assets/chf-card.js', __FILE__), 
-                array('jquery'), 
-                filemtime($js_path), 
-                true
-            );
-            
-            // 添加安全nonce到JS - 修复：移除nonce验证，允许未登录用户访问
-            wp_localize_script('custom-card-script', 'customCardAjax', array(
-                'ajax_url' => admin_url('admin-ajax.php')
-            ));
-        }
+        wp_enqueue_script(
+            'chfm-card-script',
+            plugins_url('assets/script.js', __FILE__),
+            array('jquery'),
+            self::PLUGIN_VERSION,
+            true
+        );
+        
+        // 本地化脚本
+        wp_localize_script('chfm-card-script', 'chfmCard', array(
+            'ajaxUrl' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce(self::NONCE_ACTION),
+            'loadingText' => '正在加载...',
+            'errorText' => '加载失败，请重试。'
+        ));
     }
-
+    
     /**
      * 处理短代码
      * 
@@ -552,22 +510,14 @@ class Chf_Card_Plugin_Core {
      * @return string 渲染后的HTML
      */
     public function handle_shortcode($atts) {
-        $atts = shortcode_atts(
-            [
-                'url' => '',
-                'title' => '',
-                'image' => '',
-                'description' => ''
-            ], 
-            $atts, 
-            'chf_card'
-        );
-        
-        // 严格URL验证
+        $default = ['url' => '', 'title' => '', 'image' => '', 'description' => ''];
+        $atts = shortcode_atts($default, $atts, 'custom_card');
+
+        // 验证URL
         if (empty($atts['url']) || !$this->is_valid_url($atts['url'])) {
             return '<div class="card-error">✖️ 无效的URL参数</div>';
         }
-        
+
         // 获取卡片数据
         $data = $this->retrieve_card_data($atts);
         
@@ -586,9 +536,16 @@ class Chf_Card_Plugin_Core {
      * 处理AJAX请求
      */
     public function handle_ajax_request() {
-        // 修复：移除nonce验证，允许未登录用户访问
-        // 验证URL参数
-        if (empty($_POST['url']) || !$this->is_valid_url($_POST['url'])) {
+        // 验证nonce
+        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], self::NONCE_ACTION)) {
+            wp_send_json_error([
+                'message' => '安全验证失败',
+            ]);
+            return;
+        }
+        
+        // 验证URL
+        if (!isset($_POST['url']) || !$this->is_valid_url($_POST['url'])) {
             wp_send_json_error([
                 'message' => '无效的URL参数',
             ]);
@@ -902,39 +859,126 @@ class Chf_Card_Plugin_Core {
     }
 
     /**
-     * 解析相对URL
+     * 解析相对URL - 修复版本
      * 
      * @param string $path 路径
      * @param string $base 基础URL
      * @return string 完整URL
      */
     private function resolve_relative_url($path, $base) {
-        // 检查是否已经是完整URL
-        if (filter_var($path, FILTER_VALIDATE_URL)) {
+        // 输入验证
+        if (empty($path)) {
+            return '';
+        }
+        
+        // 去除路径前后的空白字符
+        $path = trim($path);
+        $base = trim($base);
+        
+        // 多重检查：判断是否已经是完整URL
+        if ($this->is_absolute_url($path)) {
             return $path;
         }
         
         // 解析基础URL
         $baseParts = parse_url($base);
         if (!isset($baseParts['scheme']) || !isset($baseParts['host'])) {
-            return '';
+            // 如果基础URL无效，直接返回原路径
+            return $path;
         }
         
-        // 构建完整URL
+        // 构建完整URL的基础部分
         $scheme = $baseParts['scheme'];
         $host = $baseParts['host'];
         $port = isset($baseParts['port']) ? ':' . $baseParts['port'] : '';
         
         // 处理不同类型的相对路径
         if (strpos($path, '/') === 0) {
-            // 绝对路径
+            // 绝对路径（相对于域名根目录）
             return "{$scheme}://{$host}{$port}{$path}";
         } else {
-            // 相对路径
+            // 相对路径（相对于当前目录）
             $basePath = isset($baseParts['path']) ? $baseParts['path'] : '/';
+            
+            // 确保基础路径以斜杠结尾
+            if (substr($basePath, -1) !== '/') {
+                $basePath = dirname($basePath) . '/';
+            }
+            
+            // 规范化路径，移除末尾的文件名
             $basePath = preg_replace('#/[^/]*$#', '/', $basePath);
+            
             return "{$scheme}://{$host}{$port}{$basePath}{$path}";
         }
+    }
+    
+    /**
+     * 检查是否为绝对URL - 新增辅助函数
+     * 
+     * @param string $url 要检查的URL
+     * @return bool 是否为绝对URL
+     */
+    private function is_absolute_url($url) {
+        // 检查1：使用PHP内置函数验证
+        if (filter_var($url, FILTER_VALIDATE_URL) !== false) {
+            return true;
+        }
+        
+        // 检查2：使用正则表达式检查协议
+        if (preg_match('/^https?:\/\//i', $url)) {
+            return true;
+        }
+        
+        // 检查3：检查是否包含协议分隔符
+        if (strpos($url, '://') !== false) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 安全的URL验证函数 - 新增
+     * 
+     * @param string $url 要验证的URL
+     * @return bool 是否为安全的URL
+     */
+    private function is_safe_url($url) {
+        // 基本URL格式验证
+        if (!$this->is_absolute_url($url)) {
+            return false;
+        }
+        
+        // 解析URL
+        $parsed_url = parse_url($url);
+        
+        // 检查必要的URL组件
+        if (!isset($parsed_url['scheme']) || !isset($parsed_url['host'])) {
+            return false;
+        }
+        
+        // 只允许http和https协议
+        if (!in_array(strtolower($parsed_url['scheme']), ['http', 'https'])) {
+            return false;
+        }
+        
+        // 防止本地主机和内网IP访问（SSRF防护）
+        $host = strtolower($parsed_url['host']);
+        
+        // 检查本地主机
+        if (in_array($host, ['localhost', '127.0.0.1', '::1'])) {
+            return false;
+        }
+        
+        // 检查是否为IP地址
+        if (filter_var($host, FILTER_VALIDATE_IP)) {
+            // 检查是否为私有IP地址
+            if (!filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                return false;
+            }
+        }
+        
+        return true;
     }    
 }
 
