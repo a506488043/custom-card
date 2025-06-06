@@ -143,6 +143,34 @@ class Chf_Card_Plugin_Core {
         // 添加管理页面样式
         add_action('admin_enqueue_scripts', [$this, 'admin_enqueue_scripts']);
     }
+
+    /**
+     * 加载前端资源
+     */
+    public function load_assets() {
+        // 加载CSS样式
+        wp_enqueue_style(
+            'chfm-card-style',
+            plugins_url('assets/chf-card.css', __FILE__),
+            array(),
+            self::PLUGIN_VERSION
+        );
+
+        // 加载JavaScript
+        wp_enqueue_script(
+            'chfm-card-script',
+            plugins_url('assets/chf-card.js', __FILE__),
+            array('jquery'),
+            self::PLUGIN_VERSION,
+            true
+        );
+
+        // 本地化脚本
+        wp_localize_script('chfm-card-script', 'chfmCard', array(
+            'ajaxUrl' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce(self::NONCE_ACTION)
+        ));
+    }
     
     /**
      * 添加管理页面样式
@@ -312,6 +340,20 @@ class Chf_Card_Plugin_Core {
     }
     
     /**
+     * 截断文本并添加省略号
+     * 
+     * @param string $text 要截断的文本
+     * @param int $length 最大长度
+     * @return string 截断后的文本
+     */
+    private function truncate_text($text, $length) {
+        if (mb_strlen($text) > $length) {
+            return mb_substr($text, 0, $length) . '...';
+        }
+        return $text;
+    }
+
+    /**
      * 渲染设置页面
      */
     public function render_settings_page() {
@@ -407,27 +449,11 @@ class Chf_Card_Plugin_Core {
                                             <button type="button" class="button button-small edit-card-btn" data-url-hash="<?php echo esc_attr($item->url_hash); ?>">编辑</button>
                                             <a href="<?php echo esc_url($delete_url); ?>" class="button button-small" onclick="return confirm('确定要删除此缓存项吗？');">删除</a>
                                             
-                                            <!-- 隐藏的编辑表单 -->
-                                            <div class="edit-form" id="edit-form-<?php echo esc_attr($item->url_hash); ?>" style="display: none;">
-                                                <h3>编辑卡片数据</h3>
-                                                <table class="form-table">
-                                                    <tr>
-                                                        <th><label for="edit-title-<?php echo esc_attr($item->url_hash); ?>">标题:</label></th>
-                                                        <td><input type="text" id="edit-title-<?php echo esc_attr($item->url_hash); ?>" value="<?php echo esc_attr($item->title); ?>" class="regular-text"></td>
-                                                    </tr>
-                                                    <tr>
-                                                        <th><label for="edit-image-<?php echo esc_attr($item->url_hash); ?>">图片URL:</label></th>
-                                                        <td><input type="url" id="edit-image-<?php echo esc_attr($item->url_hash); ?>" value="<?php echo esc_attr($item->image); ?>" class="regular-text"></td>
-                                                    </tr>
-                                                    <tr>
-                                                        <th><label for="edit-description-<?php echo esc_attr($item->url_hash); ?>">描述:</label></th>
-                                                        <td><textarea id="edit-description-<?php echo esc_attr($item->url_hash); ?>" rows="3" class="large-text"><?php echo esc_textarea($item->description); ?></textarea></td>
-                                                    </tr>
-                                                </table>
-                                                <p>
-                                                    <button type="button" class="button button-primary save-edit-btn" data-url-hash="<?php echo esc_attr($item->url_hash); ?>">保存</button>
-                                                    <button type="button" class="button cancel-edit-btn" data-url-hash="<?php echo esc_attr($item->url_hash); ?>">取消</button>
-                                                </p>
+                                            <!-- 隐藏的完整数据字段 -->
+                                            <div class="hidden-card-data" style="display: none;">
+                                                <input type="hidden" class="card-full-title" value="<?php echo esc_attr($item->title); ?>">
+                                                <input type="hidden" class="card-full-image" value="<?php echo esc_attr($item->image); ?>">
+                                                <input type="hidden" class="card-full-description" value="<?php echo esc_attr($item->description); ?>">
                                             </div>
                                         </td>
                                     </tr>
@@ -457,79 +483,47 @@ class Chf_Card_Plugin_Core {
                     <?php endif; ?>
                 </div>
             </div>
+            
+            <!-- 编辑卡片模态框 -->
+            <div id="edit-card-modal" class="chfm-modal" style="display: none;">
+                <div class="chfm-modal-content">
+                    <span class="chfm-modal-close">&times;</span>
+                    <h2>编辑卡片数据</h2>
+                    
+                    <form id="edit-card-form">
+                        <input type="hidden" id="edit-url-hash" name="url_hash">
+                        
+                        <table class="form-table">
+                            <tr>
+                                <th><label for="edit-title">标题:</label></th>
+                                <td><input type="text" id="edit-title" name="title" class="regular-text" required></td>
+                            </tr>
+                            <tr>
+                                <th><label for="edit-image">图片URL:</label></th>
+                                <td>
+                                    <input type="url" id="edit-image" name="image" class="regular-text">
+                                    <div style="margin-top: 10px;">
+                                        <img id="image-preview" src="" alt="图片预览" style="max-width: 200px; max-height: 150px; display: none;">
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th><label for="edit-description">描述:</label></th>
+                                <td><textarea id="edit-description" name="description" rows="4" class="large-text"></textarea></td>
+                            </tr>
+                        </table>
+                        
+                        <div id="edit-status" style="margin: 10px 0; display: none;"></div>
+                        
+                        <p class="submit">
+                            <input type="submit" class="button button-primary" value="保存更改">
+                            <button type="button" class="button chfm-modal-close">取消</button>
+                        </p>
+                    </form>
+                </div>
+            </div>
         </div>
         <?php
-    }
-    
-    /**
-     * 截断文本
-     * 
-     * @param string $text 原文本
-     * @param int $length 最大长度
-     * @return string 截断后的文本
-     */
-    private function truncate_text($text, $length) {
-        if (mb_strlen($text) > $length) {
-            return mb_substr($text, 0, $length) . '...';
-        }
-        return $text;
-    }
-    
-    /**
-     * 加载前端资源
-     */
-    public function load_assets() {
-        wp_enqueue_style(
-            'chfm-card-style',
-            plugins_url('assets/style.css', __FILE__),
-            array(),
-            self::PLUGIN_VERSION
-        );
-        
-        wp_enqueue_script(
-            'chfm-card-script',
-            plugins_url('assets/script.js', __FILE__),
-            array('jquery'),
-            self::PLUGIN_VERSION,
-            true
-        );
-        
-        // 本地化脚本
-        wp_localize_script('chfm-card-script', 'chfmCard', array(
-            'ajaxUrl' => admin_url('admin-ajax.php'),
-            'nonce' => wp_create_nonce(self::NONCE_ACTION),
-            'loadingText' => '正在加载...',
-            'errorText' => '加载失败，请重试。'
-        ));
-    }
-    
-    /**
-     * 处理短代码
-     * 
-     * @param array $atts 短代码属性
-     * @return string 渲染后的HTML
-     */
-    public function handle_shortcode($atts) {
-        $default = ['url' => '', 'title' => '', 'image' => '', 'description' => ''];
-        $atts = shortcode_atts($default, $atts, 'custom_card');
-
-        // 验证URL
-        if (empty($atts['url']) || !$this->is_valid_url($atts['url'])) {
-            return '<div class="card-error">✖️ 无效的URL参数</div>';
-        }
-
-        // 获取卡片数据
-        $data = $this->retrieve_card_data($atts);
-        
-        // 检查是否有错误
-        if (isset($data['error'])) {
-            return '<div class="card-error">✖️ ' . esc_html($data['error']) . '</div>';
-        }
-        
-        // 渲染模板
-        ob_start();
-        include plugin_dir_path(__FILE__) . 'template/card.php';
-        return ob_get_clean();
     }
     
     /**
@@ -588,6 +582,7 @@ class Chf_Card_Plugin_Core {
         ]);
     }
     
+
     /**
      * 验证URL是否有效且安全
      * 
@@ -877,7 +872,18 @@ class Chf_Card_Plugin_Core {
         
         // 多重检查：判断是否已经是完整URL
         if ($this->is_absolute_url($path)) {
+            // 如果已经是绝对URL，直接返回
             return $path;
+        }
+        
+        // 检查是否以//开头（协议相对URL）
+        if (strpos($path, '//') === 0) {
+            // 从基础URL获取协议
+            $baseParts = parse_url($base);
+            if (isset($baseParts['scheme'])) {
+                return $baseParts['scheme'] . ':' . $path;
+            }
+            return 'https:' . $path; // 默认使用https
         }
         
         // 解析基础URL
@@ -908,12 +914,16 @@ class Chf_Card_Plugin_Core {
             // 规范化路径，移除末尾的文件名
             $basePath = preg_replace('#/[^/]*$#', '/', $basePath);
             
+            // 处理../和./的相对路径
+            $path = str_replace('../', '', $path);
+            $path = str_replace('./', '', $path);
+            
             return "{$scheme}://{$host}{$port}{$basePath}{$path}";
         }
     }
     
     /**
-     * 检查是否为绝对URL - 新增辅助函数
+     * 检查是否为绝对URL - 增强版
      * 
      * @param string $url 要检查的URL
      * @return bool 是否为绝对URL
@@ -929,7 +939,17 @@ class Chf_Card_Plugin_Core {
             return true;
         }
         
-        // 检查3：检查是否包含协议分隔符
+        // 检查3：检查是否以//开头（协议相对URL）
+        if (strpos($url, '//') === 0) {
+            return true;
+        }
+        
+        // 检查4：检查data:和blob:等特殊协议
+        if (preg_match('/^(data|blob|mailto|tel):/i', $url)) {
+            return true;
+        }
+        
+        // 检查5：检查是否包含协议分隔符
         if (strpos($url, '://') !== false) {
             return true;
         }
