@@ -145,6 +145,36 @@ class Chf_Card_Plugin_Core {
     }
 
     /**
+     * 短代码处理函数
+     * 
+     * @param array $atts 短代码属性
+     * @return string 渲染后的HTML
+     */
+    public function handle_shortcode($atts) {
+        // 设置默认值并合并属性
+        $default = ['url' => '', 'title' => '', 'image' => '', 'description' => ''];
+        $atts = shortcode_atts($default, $atts, 'custom_card');
+        
+        // 验证URL
+        if (empty($atts['url']) || !$this->is_valid_url($atts['url'])) {
+            return '<div class="card-error">✖️ 无效的URL参数</div>';
+        }
+
+        // 获取卡片数据
+        $data = $this->retrieve_card_data($atts);
+        
+        // 检查是否有错误
+        if (isset($data['error'])) {
+            return '<div class="card-error">✖️ ' . esc_html($data['error']) . '</div>';
+        }
+        
+        // 渲染模板
+        ob_start();
+        include plugin_dir_path(__FILE__) . 'template/card.php';
+        return ob_get_clean();
+    }
+
+    /**
      * 加载前端资源
      */
     public function load_assets() {
@@ -265,20 +295,49 @@ class Chf_Card_Plugin_Core {
             30                           // 位置
         );
         
-        // 添加缓存和使用说明子菜单
+        // 添加卡片列表子菜单（主菜单的别名）
         add_submenu_page(
             'toolbox-main',              // 父菜单slug
-            '缓存状态和使用说明',              // 页面标题
-            '缓存状态和使用说明',              // 菜单标题
+            '卡片列表',                    // 页面标题
+            '卡片列表',                    // 菜单标题
+            'manage_options',            // 权限
+            'toolbox-main',              // 菜单slug（与主菜单相同）
+            [$this, 'render_settings_page'] // 回调函数
+        );
+        
+        // 添加设置子菜单
+        add_submenu_page(
+            'toolbox-main',              // 父菜单slug
+            '插件设置',                    // 页面标题
+            '插件设置',                    // 菜单标题
+            'manage_options',            // 权限
+            'toolbox-settings',          // 菜单slug
+            [$this, 'render_plugin_settings_page'] // 回调函数
+        );
+        
+        // 添加缓存状态子菜单
+        add_submenu_page(
+            'toolbox-main',              // 父菜单slug
+            '缓存状态',                    // 页面标题
+            '缓存状态',                    // 菜单标题
             'manage_options',            // 权限
             'toolbox-function-cards',    // 菜单slug
             [$this, 'render_cache_usage_page'] // 回调函数
         );
-
+        
+        // 添加帮助子菜单
+        add_submenu_page(
+            'toolbox-main',              // 父菜单slug
+            '使用帮助',                    // 页面标题
+            '使用帮助',                    // 菜单标题
+            'manage_options',            // 权限
+            'toolbox-help',              // 菜单slug
+            [$this, 'render_help_page']  // 回调函数
+        );
     }
     
     /**
-     * 渲染缓存状态和使用说明页面
+     * 渲染缓存状态页面
      */
     public function render_cache_usage_page() {
         // 处理缓存清理操作
@@ -291,52 +350,288 @@ class Chf_Card_Plugin_Core {
         $cache_status = $this->cache_manager->get_cache_status();
         $total_items = $this->cache_manager->get_items_count();
         
-        // 显示缓存状态和使用说明页面
+        // 显示缓存状态页面
         ?>
         <div class="wrap">
-            <h1>缓存和使用说明</h1>
+            <h1>缓存状态</h1>
             
-            <!-- 缓存状态和使用说明 - 左右布局 -->
-            <div style="display: flex; gap: 20px; margin-top: 20px;">
-                <!-- 左侧：缓存状态 -->
-                <div style="flex: 1;">
-                    <div class="card">
-                        <h2>缓存状态</h2>
+            <!-- 缓存状态 -->
+            <div class="card">
+                <h2>缓存状态</h2>
+                <table class="form-table">
+                    <tr>
+                        <th>Memcached 缓存:</th>
+                        <td><?php echo $cache_status['memcached'] ? '<span style="color:green">✓ 已启用</span>' : '<span style="color:red">✗ 未启用</span>'; ?></td>
+                    </tr>
+                    <tr>
+                        <th>Opcache 缓存:</th>
+                        <td><?php echo $cache_status['opcache'] ? '<span style="color:green">✓ 已启用</span>' : '<span style="color:red">✗ 未启用</span>'; ?></td>
+                    </tr>
+                    <tr>
+                        <th>缓存项总数:</th>
+                        <td><?php echo $total_items; ?></td>
+                    </tr>
+                </table>
+                
+                <form method="post">
+                    <?php wp_nonce_field('chfm_clear_cache_nonce'); ?>
+                    <p><input type="submit" name="chfm_clear_cache" class="button button-primary" value="清理所有缓存"></p>
+                </form>
+            </div>
+        </div>
+        <?php
+    }
+    
+    /**
+     * 渲染插件设置页面
+     */
+    public function render_plugin_settings_page() {
+        // 处理设置保存
+        if (isset($_POST['chfm_save_settings']) && check_admin_referer('chfm_settings_nonce')) {
+            // 保存设置
+            $this->save_settings();
+            echo '<div class="notice notice-success"><p>设置已保存！</p></div>';
+        }
+        
+        // 获取当前设置
+        $settings = $this->get_settings();
+        
+        // 显示设置页面
+        ?>
+        <div class="wrap">
+            <h1>网站卡片设置</h1>
+            
+            <form method="post" action="">
+                <?php wp_nonce_field('chfm_settings_nonce'); ?>
+                
+                <!-- 将两个卡片放在同一行 -->
+                <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;">
+                    <div class="card" style="flex: 1; min-width: 300px;">
+                        <h2>基本设置</h2>
+                        
                         <table class="form-table">
                             <tr>
-                                <th>Memcached 缓存:</th>
-                                <td><?php echo $cache_status['memcached'] ? '<span style="color:green">✓ 已启用</span>' : '<span style="color:red">✗ 未启用</span>'; ?></td>
+                                <th scope="row">
+                                    <label for="cache_time">缓存时间（小时）</label>
+                                </th>
+                                <td>
+                                    <input type="number" name="cache_time" id="cache_time" value="<?php echo esc_attr($settings['cache_time']); ?>" min="1" max="720" class="regular-text">
+                                    <p class="description">设置卡片数据的缓存时间，默认为72小时。</p>
+                                </td>
                             </tr>
                             <tr>
-                                <th>Opcache 缓存:</th>
-                                <td><?php echo $cache_status['opcache'] ? '<span style="color:green">✓ 已启用</span>' : '<span style="color:red">✗ 未启用</span>'; ?></td>
+                                <th scope="row">
+                                    <label for="lazy_load">启用懒加载</label>
+                                </th>
+                                <td>
+                                    <input type="checkbox" name="lazy_load" id="lazy_load" <?php checked($settings['lazy_load'], 1); ?> value="1">
+                                    <p class="description">启用后，卡片将在滚动到可见区域时才加载。</p>
+                                </td>
                             </tr>
                             <tr>
-                                <th>缓存项总数:</th>
-                                <td><?php echo $total_items; ?></td>
+                                <th scope="row">
+                                    <label for="open_in_new_tab">在新标签页打开链接</label>
+                                </th>
+                                <td>
+                                    <input type="checkbox" name="open_in_new_tab" id="open_in_new_tab" <?php checked($settings['open_in_new_tab'], 1); ?> value="1">
+                                    <p class="description">启用后，点击卡片将在新标签页打开链接。</p>
+                                </td>
                             </tr>
                         </table>
+                    </div>
+                    
+                    <div class="card" style="flex: 1; min-width: 300px;">
+                        <h2>显示设置</h2>
                         
-                        <form method="post">
-                            <?php wp_nonce_field('chfm_clear_cache_nonce'); ?>
-                            <p><input type="submit" name="chfm_clear_cache" class="button button-primary" value="清理所有缓存"></p>
-                        </form>
+                        <table class="form-table">
+                            <tr>
+                                <th scope="row">
+                                    <label for="show_title">显示标题</label>
+                                </th>
+                                <td>
+                                    <input type="checkbox" name="show_title" id="show_title" <?php checked($settings['show_title'], 1); ?> value="1">
+                                    <p class="description">是否显示卡片标题。</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">
+                                    <label for="show_description">显示描述</label>
+                                </th>
+                                <td>
+                                    <input type="checkbox" name="show_description" id="show_description" <?php checked($settings['show_description'], 1); ?> value="1">
+                                    <p class="description">是否显示卡片描述。</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">
+                                    <label for="show_image">显示图片</label>
+                                </th>
+                                <td>
+                                    <input type="checkbox" name="show_image" id="show_image" <?php checked($settings['show_image'], 1); ?> value="1">
+                                    <p class="description">是否显示卡片图片。</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">
+                                    <label for="card_width">卡片宽度</label>
+                                </th>
+                                <td>
+                                    <select name="card_width" id="card_width">
+                                        <option value="full" <?php selected($settings['card_width'], 'full'); ?>>全宽</option>
+                                        <option value="wide" <?php selected($settings['card_width'], 'wide'); ?>>宽（80%）</option>
+                                        <option value="medium" <?php selected($settings['card_width'], 'medium'); ?>>中等（60%）</option>
+                                        <option value="narrow" <?php selected($settings['card_width'], 'narrow'); ?>>窄（40%）</option>
+                                    </select>
+                                    <p class="description">设置卡片的宽度。</p>
+                                </td>
+                            </tr>
+                        </table>
                     </div>
                 </div>
                 
-                <!-- 右侧：使用说明 -->
-                <div style="flex: 1;">
-                    <div class="card">
-                        <h2>使用说明</h2>
-                        <p>本插件支持多级缓存机制，数据先写入数据库，再同步到Opcache和Memcached缓存，提高访问速度。</p>
-                        <p>短代码用法: <code>[custom_card url="https://example.com"]</code></p>
-                        <p>区块编辑器中也可以直接添加"网站卡片"区块。</p>
-                        <p>点击上方列表中的"编辑"按钮可以修改缓存的卡片数据。</p>
+                <p class="submit">
+                    <input type="submit" name="chfm_save_settings" class="button button-primary" value="保存设置">
+                </p>
+            </form>
+        </div>
+        <?php
+    }
+    
+    /**
+     * 渲染帮助页面
+     */
+    public function render_help_page() {
+        ?>
+        <div class="wrap">
+            <h1>网站卡片使用帮助</h1>
+            
+            <!-- 三个方框放在第一行 -->
+            <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;">
+                <div class="card" style="flex: 1; min-width: 300px;">
+                    <h2>基本用法</h2>
+                    
+                    <h3>短代码用法</h3>
+                    <p>您可以使用以下短代码在文章或页面中插入网站卡片：</p>
+                    <pre style="overflow-x: auto; white-space: pre-wrap; word-break: break-word;"><code>[custom_card url="https://example.com"]</code></pre>
+                    
+                    <h3>区块编辑器</h3>
+                    <p>在区块编辑器中，您可以直接添加"网站卡片"区块，然后输入URL。</p>
+                    
+                    <h3>高级用法</h3>
+                    <p>您可以使用以下参数自定义卡片：</p>
+                    <div style="max-width: 100%; overflow-x: auto;">
+                        <pre style="white-space: pre-wrap; word-break: break-word; font-size: 12px; max-width: 100%;"><code>[custom_card url="https://example.com" title="自定义标题" description="自定义描述" image="https://example.com/image.jpg"]</code></pre>
                     </div>
+                    <p>注意：如果提供了自定义参数，插件将优先使用这些参数，而不是从URL获取的元数据。</p>
+                </div>
+                
+                <div class="card" style="flex: 1; min-width: 300px;">
+                    <h2>常见问题</h2>
+                    
+                    <div class="chfm-faq-item">
+                        <h3>为什么我的卡片没有显示图片？</h3>
+                        <p>可能的原因：</p>
+                        <ul>
+                            <li>目标网站没有提供图片元数据（og:image 或类似标签）</li>
+                            <li>图片URL无效或无法访问</li>
+                            <li>您在设置中禁用了图片显示</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="chfm-faq-item">
+                        <h3>如何清除卡片缓存？</h3>
+                        <p>您可以在"缓存状态"页面中点击"清理所有缓存"按钮，或者在卡片列表中删除特定的缓存项。</p>
+                    </div>
+                    
+                    <div class="chfm-faq-item">
+                        <h3>如何自定义卡片样式？</h3>
+                        <p>您可以在主题的 style.css 文件中添加自定义CSS来覆盖默认样式。主要的CSS类包括：</p>
+                        <ul>
+                            <li><code>.strict-card</code> - 卡片容器</li>
+                            <li><code>.strict-inner</code> - 卡片内部容器</li>
+                            <li><code>.strict-media</code> - 图片容器</li>
+                            <li><code>.strict-content</code> - 内容容器</li>
+                            <li><code>.strict-title</code> - 标题</li>
+                            <li><code>.strict-desc</code> - 描述</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="card" style="flex: 1; min-width: 300px;">
+                    <h2>技术支持</h2>
+                    
+                    <p>如果您遇到任何问题或需要帮助，请联系插件作者。</p>
+                    
+                    <h3>联系方式</h3>
+                    <ul>
+                        <li>插件作者：17376592083</li>
+                        <li>作者网站：<a href="https://www.saita.top" target="_blank">https://www.saita.top</a></li>
+                        <li>支持邮箱：chenghoufeng@saiita.top</li>
+                    </ul>
+                    
+                    <h3>调试信息</h3>
+                    <p>在寻求支持时，请提供以下信息：</p>
+                    <ul>
+                        <li>WordPress版本：<?php echo get_bloginfo('version'); ?></li>
+                        <li>PHP版本：<?php echo phpversion(); ?></li>
+                        <li>插件版本：<?php echo self::PLUGIN_VERSION; ?></li>
+                        <li>服务器信息：<?php echo $_SERVER['SERVER_SOFTWARE']; ?></li>
+                    </ul>
                 </div>
             </div>
         </div>
         <?php
+    }
+    
+    /**
+     * 获取插件设置
+     * 
+     * @return array 设置数组
+     */
+    private function get_settings() {
+        // 默认设置
+        $defaults = array(
+            'cache_time' => 72, // 默认72小时
+            'lazy_load' => 1, // 默认启用懒加载
+            'open_in_new_tab' => 1, // 默认在新标签页打开
+            'show_title' => 1, // 默认显示标题
+            'show_description' => 1, // 默认显示描述
+            'show_image' => 1, // 默认显示图片
+            'card_width' => 'full', // 默认全宽
+        );
+        
+        // 获取保存的设置
+        $settings = get_option('chfm_card_settings', array());
+        
+        // 合并默认设置和保存的设置
+        return wp_parse_args($settings, $defaults);
+    }
+    
+    /**
+     * 保存插件设置
+     */
+    private function save_settings() {
+        // 验证权限
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        
+        // 获取并清理设置值
+        $settings = array(
+            'cache_time' => isset($_POST['cache_time']) ? intval($_POST['cache_time']) : 72,
+            'lazy_load' => isset($_POST['lazy_load']) ? 1 : 0,
+            'open_in_new_tab' => isset($_POST['open_in_new_tab']) ? 1 : 0,
+            'show_title' => isset($_POST['show_title']) ? 1 : 0,
+            'show_description' => isset($_POST['show_description']) ? 1 : 0,
+            'show_image' => isset($_POST['show_image']) ? 1 : 0,
+            'card_width' => isset($_POST['card_width']) ? sanitize_text_field($_POST['card_width']) : 'full',
+        );
+        
+        // 确保缓存时间在合理范围内
+        $settings['cache_time'] = max(1, min(720, $settings['cache_time']));
+        
+        // 保存设置
+        update_option('chfm_card_settings', $settings);
     }
     
     /**
@@ -374,9 +669,12 @@ class Chf_Card_Plugin_Core {
         // 获取当前页码
         $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
         
+        // 获取搜索关键词
+        $search = isset($_GET['s']) ? sanitize_text_field($_GET['s']) : '';
+        
         // 获取缓存列表
-        $cache_items = $this->cache_manager->get_all_items($current_page, self::ITEMS_PER_PAGE);
-        $total_items = $this->cache_manager->get_items_count();
+        $cache_items = $this->cache_manager->get_all_items($current_page, self::ITEMS_PER_PAGE, $search);
+        $total_items = $this->cache_manager->get_items_count($search);
         $total_pages = ceil($total_items / self::ITEMS_PER_PAGE);
         
         // 显示设置页面
@@ -388,7 +686,25 @@ class Chf_Card_Plugin_Core {
             <div class="card chfm-full-width-card">
                 <h2>已缓存的网站卡片</h2>
                 
+                <!-- 搜索表单 -->
+                <form method="get" action="<?php echo admin_url('admin.php'); ?>" class="search-form">
+                    <input type="hidden" name="page" value="<?php echo isset($_GET['page']) ? esc_attr($_GET['page']) : 'toolbox-main'; ?>">
+                    <p class="search-box">
+                        <label class="screen-reader-text" for="card-search-input">搜索卡片:</label>
+                        <input type="search" id="card-search-input" name="s" value="<?php echo esc_attr($search); ?>" placeholder="搜索URL、标题或描述...">
+                        <input type="submit" id="search-submit" class="button" value="搜索">
+                        <?php if (!empty($search)): ?>
+                            <a href="<?php echo admin_url('admin.php?page=' . (isset($_GET['page']) ? $_GET['page'] : 'toolbox-main')); ?>" class="button">清除搜索</a>
+                        <?php endif; ?>
+                    </p>
+                </form>
+                
                 <div class="chfm-responsive-container">
+                    <?php if (!empty($search)): ?>
+                        <div class="search-result-info">
+                            <p>搜索结果: "<?php echo esc_html($search); ?>" (找到 <?php echo $total_items; ?> 项)</p>
+                        </div>
+                    <?php endif; ?>
                     <?php if (empty($cache_items)): ?>
                         <p>当前没有缓存的卡片数据。</p>
                     <?php else: ?>
@@ -440,6 +756,7 @@ class Chf_Card_Plugin_Core {
                                                         'action' => 'delete',
                                                         'url_hash' => $item->url_hash,
                                                         'paged' => $current_page,
+                                                        's' => $search, // 保留搜索参数
                                                     ),
                                                     admin_url('admin.php')
                                                 ),
@@ -466,8 +783,17 @@ class Chf_Card_Plugin_Core {
                             <div class="tablenav">
                                 <div class="tablenav-pages">
                                     <?php
+                                    // 构建基础URL，保留搜索参数
+                                    $base_url = add_query_arg(
+                                        array(
+                                            'page' => isset($_GET['page']) ? $_GET['page'] : 'toolbox-main',
+                                            's' => $search,
+                                        ),
+                                        admin_url('admin.php')
+                                    );
+                                    
                                     $page_links = paginate_links(array(
-                                        'base' => add_query_arg('paged', '%#%'),
+                                        'base' => add_query_arg('paged', '%#%', $base_url),
                                         'format' => '',
                                         'prev_text' => '&laquo; 上一页',
                                         'next_text' => '下一页 &raquo;',

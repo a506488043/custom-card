@@ -18,9 +18,14 @@ class ChfmCard_Cache_Manager {
     const CACHE_PREFIX = 'chfm_card_';
     
     /**
-     * 缓存过期时间（秒）
+     * 默认缓存过期时间（秒）
      */
-    const CACHE_EXPIRE = 259200; // 72小时，与数据库缓存保持一致
+    const DEFAULT_CACHE_EXPIRE = 259200; // 72小时
+    
+    /**
+     * 当前缓存过期时间（秒）
+     */
+    private $cache_expire = 259200; // 默认72小时
     
     /**
      * Memcached实例
@@ -41,6 +46,11 @@ class ChfmCard_Cache_Manager {
      * 构造函数
      */
     public function __construct() {
+        // 从设置中获取缓存时间
+        $settings = get_option('chfm_card_settings', array());
+        $cache_hours = isset($settings['cache_time']) ? intval($settings['cache_time']) : 72;
+        $this->cache_expire = $cache_hours * 3600; // 转换为秒
+        
         // 检查Memcached是否可用
         $this->memcached_enabled = $this->init_memcached();
         
@@ -194,7 +204,7 @@ class ChfmCard_Cache_Manager {
         // 1. 同步到Memcached
         if ($this->memcached_enabled) {
             $cache_key = $this->get_cache_key($url_hash);
-            $this->memcached->set($cache_key, $data, self::CACHE_EXPIRE);
+            $this->memcached->set($cache_key, $data, $this->cache_expire);
         }
         
         // 2. 同步到Opcache
@@ -242,7 +252,7 @@ class ChfmCard_Cache_Manager {
             'title' => isset($data['title']) ? $data['title'] : '',
             'image' => isset($data['image']) ? $data['image'] : '',
             'description' => isset($data['description']) ? $data['description'] : '',
-            'expires_at' => date('Y-m-d H:i:s', time() + self::CACHE_EXPIRE)
+            'expires_at' => date('Y-m-d H:i:s', time() + $this->cache_expire)
         ];
         
         // 格式
@@ -392,7 +402,7 @@ class ChfmCard_Cache_Manager {
         
         // 检查文件是否过期
         $file_time = filemtime($opcache_file);
-        if ($file_time === false || (time() - $file_time) > self::CACHE_EXPIRE) {
+        if ($file_time === false || (time() - $file_time) > $this->cache_expire) {
             // 文件过期，删除并返回false
             @unlink($opcache_file);
             return false;
@@ -420,7 +430,7 @@ class ChfmCard_Cache_Manager {
         
         // 准备PHP代码
         $php_code = "<?php\n// Generated: " . date('Y-m-d H:i:s') . "\n";
-        $php_code .= "// Expires: " . date('Y-m-d H:i:s', time() + self::CACHE_EXPIRE) . "\n";
+        $php_code .= "// Expires: " . date('Y-m-d H:i:s', time() + $this->cache_expire) . "\n";
         $php_code .= "return " . var_export($data, true) . ";\n";
         
         // 写入文件
@@ -474,7 +484,7 @@ class ChfmCard_Cache_Manager {
                 'title' => isset($data['title']) ? $data['title'] : '',
                 'image' => isset($data['image']) ? $data['image'] : '',
                 'description' => isset($data['description']) ? $data['description'] : '',
-                'expires_at' => date('Y-m-d H:i:s', time() + self::CACHE_EXPIRE)
+                'expires_at' => date('Y-m-d H:i:s', time() + $this->cache_expire)
             ],
             ['url_hash' => $url_hash],
             ['%s', '%s', '%s', '%s'],
@@ -497,19 +507,27 @@ class ChfmCard_Cache_Manager {
      * 
      * @param int $page 页码
      * @param int $per_page 每页项数
+     * @param string $search 搜索关键词
      * @return array 缓存项列表
      */
-    public function get_all_items($page = 1, $per_page = 10) {
+    public function get_all_items($page = 1, $per_page = 10, $search = '') {
         global $wpdb;
         $table = $wpdb->prefix . 'chf_card_cache';
         
         $offset = ($page - 1) * $per_page;
         
-        $query = $wpdb->prepare(
-            "SELECT url_hash, url, title, image, description, expires_at FROM $table ORDER BY expires_at DESC LIMIT %d OFFSET %d",
-            $per_page,
-            $offset
-        );
+        // 添加搜索条件
+        $where = '';
+        if (!empty($search)) {
+            $search = '%' . $wpdb->esc_like($search) . '%';
+            $where = $wpdb->prepare(
+                "WHERE url LIKE %s OR title LIKE %s OR description LIKE %s",
+                $search, $search, $search
+            );
+        }
+        
+        $query = "SELECT url_hash, url, title, image, description, expires_at FROM $table $where ORDER BY expires_at DESC LIMIT %d OFFSET %d";
+        $query = $wpdb->prepare($query, $per_page, $offset);
         
         return $wpdb->get_results($query);
     }
@@ -517,12 +535,44 @@ class ChfmCard_Cache_Manager {
     /**
      * 获取缓存项总数
      * 
+     * @param string $search 搜索关键词
      * @return int 缓存项总数
      */
-    public function get_items_count() {
+    public function get_items_count($search = '') {
         global $wpdb;
         $table = $wpdb->prefix . 'chf_card_cache';
         
-        return (int) $wpdb->get_var("SELECT COUNT(*) FROM $table");
+        // 添加搜索条件
+        $where = '';
+        if (!empty($search)) {
+            $search = '%' . $wpdb->esc_like($search) . '%';
+            $where = $wpdb->prepare(
+                "WHERE url LIKE %s OR title LIKE %s OR description LIKE %s",
+                $search, $search, $search
+            );
+        }
+        
+        return (int) $wpdb->get_var("SELECT COUNT(*) FROM $table $where");
+    }
+    
+    /**
+     * 获取当前缓存过期时间（小时）
+     * 
+     * @return int 缓存过期时间（小时）
+     */
+    public function get_cache_time_hours() {
+        return $this->cache_expire / 3600;
+    }
+    
+    /**
+     * 设置缓存过期时间
+     * 
+     * @param int $hours 缓存过期时间（小时）
+     * @return void
+     */
+    public function set_cache_time($hours) {
+        $hours = max(1, min(720, intval($hours))); // 限制在1-720小时之间
+        $this->cache_expire = $hours * 3600; // 转换为秒
     }
 }
+

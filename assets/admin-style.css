@@ -173,3 +173,38 @@
         border-bottom: 0;
     }
 }
+
+/* 搜索表单样式 */
+.search-form {
+    margin-bottom: 20px;
+}
+
+.search-form .search-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding: 10px 0;
+}
+
+.search-form input[type="search"] {
+    width: 300px;
+    max-width: 100%;
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+}
+
+.search-form .button {
+    margin-left: 5px;
+}
+
+/* 搜索结果提示 */
+.search-result-info {
+    margin-bottom: 15px;
+    padding: 5px 10px;
+    background-color: #f0f0f1;
+    border-left: 4px solid #2271b1;
+    border-radius: 2px;
+}
+
