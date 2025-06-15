@@ -564,9 +564,10 @@ class Chf_Card_Plugin_Core {
                     
                     <h3>联系方式</h3>
                     <ul>
-                        <li>插件作者：17376592083</li>
-                        <li>作者网站：<a href="https://www.saita.top" target="_blank">https://www.saita.top</a></li>
+                        <li>手机：17376592083</li>
+                        <li>作者网站：<a href="https://www.saita.com.cn" target="_blank">https://www.saita.com.cn</a></li>
                         <li>支持邮箱：chenghoufeng@saiita.top</li>
+                        <li>GitHub：<a href="https://github.com/a506488043/custom-card" target="_blank">https://github.com/a506488043/custom-card</a></li>
                     </ul>
                     
                     <h3>调试信息</h3>

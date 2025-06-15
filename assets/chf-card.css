@@ -56,7 +56,9 @@
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
-    max-height: 2em; 
+    word-wrap: break-word;
+    word-break: break-word;
+    max-height: calc(1.4em * 2); /* 确保最大高度为两行 */
 }
 /* 纯URL显示样式 */
 .strict-title:only-child {
@@ -75,6 +77,10 @@
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+    text-overflow: ellipsis;
+    word-wrap: break-word;
+    word-break: break-word;
+    max-height: calc(1.5em * 2); /* 确保最大高度为两行 */
 }
 /* 覆盖层保障点击 */
 .strict-overlay {
@@ -124,3 +130,4 @@
     color: #d85050;
     font-size: 0.9rem;
 }
+
